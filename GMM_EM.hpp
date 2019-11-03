@@ -21,22 +21,37 @@ private:
 	vector<Mat> _pdf_k;
 
 	vector<double> _alpha_k;
+
+private:
+	vector<Mat> initialR;
+
+private:
+	string saveToYAML;
+	string lutYAML;
 public:
-   GMM();
-	GMM(int nKluster, vector<Mat> dataset, vector<Mat> initialR);
+	Mat canvasYAML;
+	
+public:
+    GMM();
+	GMM(int nKluster, vector<Mat> dataset, vector<Mat> initialR_, string saveToYAML_, string lutYAML_, int row_, int col_);
+
+	void initializeParam();
+	void initializeLUT(int row, int col);
+
+	void save2LUTyaml();
 	
 	bool isConvergence(vector<double> bobot_alpha_k, vector<Mat> _miyu, vector<Mat> _sigma, double& before_log);
-	void train(int iterasi, string saveToYAML);
+	void train(int iterasi, bool saveit);
 	double _PDF(Mat datum, Mat rerata, Mat covariance);
 	
-   void loadConfig(string configYAML);
+   	void loadConfig(string configYAML);
 	int predict(const Mat& raw_pixel);
 	
 	
 	
 	enum STATE{
-   	STATE_COLLECT = 0,
-   	STATE_PREDICT = 1,
+   	STATE_TRAIN = 0,
+   	STATE_SEGMENT = 1,
    	STATE_OTHER = 2
    };
 
