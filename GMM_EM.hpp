@@ -1,3 +1,9 @@
+/*
+Copyright by:
+  Sudiro
+    [at] SudiroEEN@gmail.com
+*/
+
 #ifndef GMM_EM_HPP
 #define GMM_EM_HPP
 
