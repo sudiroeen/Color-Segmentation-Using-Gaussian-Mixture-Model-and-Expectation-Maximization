@@ -1,9 +1,29 @@
 #include "GMM_EM.hpp"
 
-GMM::GMM(int jmlKluster, vector<Mat> dataset, vector<Mat> initialR)
-	:nKluster(jmlKluster), nData(dataset.size())
-	, _data_training(dataset)
-{
+GMM::GMM(int jmlKluster, vector<Mat> dataset, vector<Mat> initialR_, string saveToYAML_, string lutYAML_, int row_, int col_)
+	:nKluster(jmlKluster), nData(dataset.size()), initialR(initialR_), lutYAML(lutYAML_),
+	_data_training(dataset), saveToYAML(saveToYAML_)
+{	
+	initializeLUT(row_, col_);
+	initializeParam();
+	cout << "initial OK" << endl;
+}
+
+GMM::GMM(){
+	
+}
+
+void GMM::initializeLUT(int row, int col){
+	canvasYAML = Mat::zeros(row, col, CV_32SC1);
+	FileStorage fs(lutYAML, FileStorage::WRITE);
+	fs << "row" << row;
+	fs << "col" << col;
+	fs << "canvasYAML" << canvasYAML;
+	fs.release();
+}
+
+
+void GMM::initializeParam(){
 	_dimensi = initialR[0].rows;
 	mu_k.resize(nKluster);
 	Sigma_k.resize(nKluster);
@@ -12,21 +32,21 @@ GMM::GMM(int jmlKluster, vector<Mat> dataset, vector<Mat> initialR)
 	_w_i_k.resize(nKluster);
 	_pdf_k.resize(nKluster);
 
-	for(int k=0; k<jmlKluster; k++){
+	for(int k=0; k<nKluster; k++){
 		_w_i_k[k] = Mat::zeros(1, nData, CV_64FC1);
 		_pdf_k[k] = Mat::zeros(1, nData, CV_64FC1);
 
-		_alpha_k[k] = 1.0/jmlKluster;
+		_alpha_k[k] = 1.0/nKluster;
 	}
 
 	mu_k = initialR;
 
 	for(int k=0; k<nKluster; k++){
 		Sigma_k[k] = Mat::zeros(initialR[0].rows, initialR[0].rows, CV_64FC1);
-		for(int n=0; n<dataset.size(); n++){
-			Sigma_k[k] += (dataset[n] - mu_k[k]) * (dataset[n] - mu_k[k]).t();
+		for(int n=0; n<_data_training.size(); n++){
+			Sigma_k[k] += (_data_training[n] - mu_k[k]) * (_data_training[n] - mu_k[k]).t();
 		}
-		Sigma_k[k] /= dataset.size();
+		Sigma_k[k] /= _data_training.size();
 	}
 
 	double sigma_alphaXpdf = 0.0;
@@ -41,7 +61,6 @@ GMM::GMM(int jmlKluster, vector<Mat> dataset, vector<Mat> initialR)
 	for(int k=0; k<nKluster; k++){
 		_w_i_k[k] /= sigma_alphaXpdf;
 	}
-
 }
 
 
@@ -78,10 +97,10 @@ bool GMM::isConvergence(vector<double> bobot_alpha_k, vector<Mat> _miyu, vector<
 	return false;
 }
 
-void GMM::train(int iterasi, string saveToYAML){//, vector<string> name_kluster){
+void GMM::train(int iterasi, bool saveit){
 	double log_likely_hood = 0.0;
 	for(int i=0; i<iterasi; i++){
-		cout << "step " << i << ": ";
+		cout << "iterasi " << i << endl;
 		if(isConvergence(_alpha_k, mu_k, Sigma_k, log_likely_hood))
 			break;
 
@@ -128,10 +147,40 @@ void GMM::train(int iterasi, string saveToYAML){//, vector<string> name_kluster)
 		fs << "Alpha_"+ss.str() << _alpha_k[k];
 	}
 	fs.release();
+
+	cout << "Training done !!" << endl;
+	if(saveit){
+		cout << "Saving....." << endl;
+		save2LUTyaml();
+		cout << "done! saved!" << endl;
+	}
 }
 
-GMM::GMM(){
-	// cout << "object created" << endl;
+void GMM::save2LUTyaml(){
+	loadConfig(saveToYAML);
+	for(int b=0; b<256; b++){
+		for(int g=0; g<256; g++){
+			for(int r=0; r<256; r++){
+				double B = double(b) / 4.0;
+				double G = double(g) / 4.0;
+				double R = double(r) / 4.0;
+
+				Mat _pixel = (Mat_<double>(3,1) << B, G, R);
+				int predicted = predict(_pixel);
+
+				int Bind = b >> 2;
+				int Gind = g >> 2;
+				int Rind = r >> 2;
+
+				canvasYAML.at<int>(((Bind << 6) << 6) + (Gind << 6) + Rind) = predicted;
+			}
+		}
+	}
+
+	cout << "canvas filled" << endl;
+	FileStorage fs2(lutYAML, FileStorage::WRITE);
+	fs2 << "lutYAML" << canvasYAML;
+	fs2.release();
 }
 
 void GMM::loadConfig(string configYAML){
@@ -153,38 +202,15 @@ void GMM::loadConfig(string configYAML){
 		fs["Alpha_" + _ss.str()] >> _alpha_k[k];
 	}
 
-	// cout << Sigma_k[0] << endl;
 	fs.release();
 }
 
 int GMM::predict(const Mat& raw_pixel){
-	// Mat _x = raw_pixel;
-	// double sumAlphaXpdf = 0.0;
-	// Mat xToKluster = Mat::zeros(1, nKluster, CV_64FC1);
-	
-	// double* ptr_xToKluster = xToKluster.ptr<double>(0);
-
-	// for(int k=0; k<nKluster; k++){
-	// 	sumAlphaXpdf += _alpha_k[k]*_PDF(_x, mu_k[k], Sigma_k[k]);
-	// 	ptr_xToKluster[k] = _alpha_k[k]*_PDF(_x, mu_k[k], Sigma_k[k]);
-	// }
-
-	// double _max = 0.0;
-	// int kluster = -1;
-	// for(int k=0; k<nKluster; k++){
-	// 	double _batas = ptr_xToKluster[k] * log(ptr_xToKluster[k])/sumAlphaXpdf;
-	// 	if(_max < _batas){
-	// 		_max = _batas;
-	// 		kluster = k;
-	// 	}
-	// }
-
 	int kluster = 0;
 	Mat _x = raw_pixel;
 	double _maksimum = 0.0;
 	for(int k=0; k<nKluster; k++){
 		double alphaXpdf = _alpha_k[k] * _PDF(_x, mu_k[k], Sigma_k[k]);
-		// cout << _PDF(_x, mu_k[k], Sigma_k[k]) << endl;
 
 		if(alphaXpdf > _maksimum){
 			_maksimum = alphaXpdf;
@@ -192,190 +218,5 @@ int GMM::predict(const Mat& raw_pixel){
 		}
 	}
 
-	// cout << kluster << endl;
 	return kluster;
-}
-
-
-Mat gambar;
-Mat gambarClone;
-Point titikStart;
-bool afterDownBeforeUp = false;
-Rect rectROI;
-
-static void onMouse(int event, int x, int y, int, void*){
-    int xrs, yrs, lx, ly;
-
-    if(afterDownBeforeUp){
-        gambar = gambarClone.clone();
-        xrs = min(titikStart.x, x);
-        yrs = min(titikStart.y, y);
-        lx = max(titikStart.x, x) - min(titikStart.x, x);
-        ly = max(titikStart.y, y) - min(titikStart.y, y);
-        rectROI = Rect(xrs, yrs, lx+1, ly+1);
-
-        rectangle(gambar, rectROI,Scalar(255, 0, 0), 1);
-    }
-    if(event == EVENT_LBUTTONDOWN){
-        titikStart = Point(x,y);
-        rectROI = Rect(x,y,0,0);
-        afterDownBeforeUp = true;
-
-    }else if(event == EVENT_LBUTTONUP){
-        Mat roi(gambarClone.clone(), rectROI);
-        imshow("roi", roi);
-
-        afterDownBeforeUp = false;
-    }
-}
-
-
-vector<Mat> masukanMatrix(Mat gambar, Rect kotak){
-    int xrs, yrs, xrf, yrf;
-    xrs = kotak.x;
-    yrs = kotak.y;
-    xrf = xrs + kotak.width;
-    yrf = yrs + kotak.height;
-
-    vector<Mat> RGB;
-    for(int xx=xrs+1; xx<xrf; xx++){
-        for(int yy=yrs+1; yy<yrf; yy++){
-            Vec3b pixel = gambar.at<Vec3b>(yy,xx);
-
-            double R = (double)pixel[2];
-            double G = (double)pixel[1];
-            double B = (double)pixel[0];
-
-            RGB.push_back((Mat_<double>(3,1) << B, G, R));
-        }
-    }
-
-    return RGB;
-}
-
-
-int main(){
-	VideoCapture vc("/home/udiro/Music/gawangPkkh.mp4");
-
-	vector<Mat> _datasetWarna;
-
-	std::vector<string> namaKluster;
-	namaKluster.push_back("hijau");
-	namaKluster.push_back("putih");
-	namaKluster.push_back("other");
-
-	int state = GMM::STATE_PREDICT;
-
-	if(! vc.isOpened())
-		return -1;
-	while(true){
-		Mat frame;		
-		vc.read(frame);
-
-		resize(frame, frame, Size(), 640.0/(double)frame.cols, 480.0/(double)frame.rows);
-
-		namedWindow("frame", CV_WINDOW_NORMAL);
-		imshow("frame", frame);
-		int key = waitKey(10);
-		if((char) key == 'k'){
-			namedWindow("kalibrasiFrame", CV_WINDOW_NORMAL);
-			setMouseCallback("kalibrasiFrame", onMouse);
-			
-			gambar = frame;
-			gambarClone = gambar.clone();
-
-			while(true){
-				int inkey = waitKey(10);
-				imshow("kalibrasiFrame", gambar);
-
-				if((rectROI.width != 0) || (rectROI.height != 0) ){
-	                bool kalib = true;
-	                vector<Mat> dataTemp;
-
-	                if((char)inkey == 's'){
-                    	dataTemp = masukanMatrix(gambar, rectROI);
-                    	cout << "data saved !!!" << endl;
-	                }
-
-		            if(dataTemp.size()){
-		            	if(_datasetWarna.size() > 3000){
-							cout << "Dataset udah banyak brooo" << endl;
-						 }else{
-						 	// int tambah = (3000 - _datasetWarna.size()) > dataTemp.size() ? dataTemp.size() : (3000 - _datasetWarna.size());
-						 	int tambah = dataTemp.size() < 200 ? dataTemp.size()-1 : 200;
-		            		_datasetWarna.insert(_datasetWarna.end(), dataTemp.begin(), dataTemp.begin() + tambah);
-		            	 }
-		            	cout << _datasetWarna.size() << endl;
-		            }
-            	}
-
-				if((char) inkey == 'c'){
-					destroyAllWindows();
-					break;
-				}
-			}
-		}
-
-		if(state == GMM::STATE_COLLECT){
-			if(! _datasetWarna.size()){
-				cout << "Harus ada dataset BROO" << endl;
-			}else if(_datasetWarna.size() > 3000){
-				int banyakKluster = 3;
-				vector<Mat> awal;
-				awal.push_back((Mat_<double>(3,1) << 0.0, 255.0, 0.0));
-				awal.push_back((Mat_<double>(3,1) << 255.0 , 255.0, 255.0));
-				awal.push_back((Mat_<double>(3,1) << 10, 20, 30));
-			
-
-				GMM _gaussian(banyakKluster, _datasetWarna, awal);
-				_gaussian.train(2000, "RGB.yaml");
-				state = GMM::STATE_PREDICT;
-			}
-		}
-
-		if(state == GMM::STATE_PREDICT){
-			Mat blank = Mat::zeros(frame.size(), CV_8UC3);
-
-			GMM _gaus_predict;
-			_gaus_predict.loadConfig("RGB.yaml");
-			for(int r=0;r<frame.rows; r++){
-				Vec3b* ptr_ = frame.ptr<Vec3b>(r);
-				Vec3b* _ptr_blank = blank.ptr<Vec3b>(r);
-
-				for(int c=0; c<frame.cols; c++){					
-					double B = (double)ptr_[c][2];
-					double G = (double)ptr_[c][1];
-					double R = (double)ptr_[c][0];
-
-					// cout << B << " " << G << " " << R << endl << endl;
-
-					Mat _pixel = (Mat_<double>(3,1) << B, G, R);
-					// cout << _pixel << endl;
-
-					/* MASALAH DI SINI*/
-					int predicted = _gaus_predict.predict(_pixel);
-					/**/
-					// cout << predicted << endl;
-					switch(predicted){
-						case 0:
-							// cout << "0 is " << Point(c,r) << endl;
-							_ptr_blank[c] = Vec3b(0, 0, 255);
-							break;
-						case 1: 
-							// cout << "1 is " << Point(c,r) << endl;
-							_ptr_blank[c] = Vec3b(0, 255, 0);
-							break;
-						case 2: 
-							// cout << "2 is " << Point(c,r) << endl;
-							_ptr_blank[c] = Vec3b(255, 0, 0);
-							break;
-					}
-				}
-			}
-			namedWindow("labeled", CV_WINDOW_NORMAL);
-			imshow("labeled", blank);
-		}
-		if(key == 27)
-			break;
-	}
 }
