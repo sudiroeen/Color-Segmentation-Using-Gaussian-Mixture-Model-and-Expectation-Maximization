@@ -1,3 +1,9 @@
+/*
+Copyright by:
+  Sudiro
+    [at] SudiroEEN@gmail.com
+*/
+
 #include "GMM_EM.hpp"
 
 GMM::GMM(int jmlKluster, vector<Mat> dataset, vector<Mat> initialR_, string saveToYAML_, string lutYAML_, int row_, int col_)
